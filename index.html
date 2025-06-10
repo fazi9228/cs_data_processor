@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS Dashboard Data Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .glass-effect { 
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .upload-area {
+            border: 2px dashed #cbd5e0;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: #667eea;
+            background-color: #f8fafc;
+        }
+        .upload-area.dragover {
+            border-color: #667eea;
+            background-color: #edf2f7;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white py-6 shadow-lg">
+        <div class="container mx-auto px-6">
+            <div class="flex items-center justify-between">
+                <h1 class="text-3xl font-bold flex items-center">
+                    <i class="fas fa-chart-bar mr-3"></i>
+                    CS Dashboard Data Processor
+                </h1>
+                <div class="text-sm opacity-90">
+                    Transform raw data → Master files → Google Sheets
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+        <!-- Tab Navigation -->
+        <div class="flex flex-wrap border-b border-gray-200 mb-8">
+            <button onclick="switchTab('chat')" id="chat-tab" 
+                    class="tab-button px-6 py-3 mr-2 font-medium rounded-t-lg transition-all duration-200 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-300">
+                <i class="fas fa-comments mr-2"></i>Chat Processing
+            </button>
+            <button onclick="switchTab('case')" id="case-tab"
+                    class="tab-button px-6 py-3 mr-2 font-medium rounded-t-lg transition-all duration-200 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-300">
+                <i class="fas fa-folder mr-2"></i>Case Processing
+            </button>
+            <button onclick="switchTab('csat')" id="csat-tab"
+                    class="tab-button px-6 py-3 mr-2 font-medium rounded-t-lg transition-all duration-200 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-300">
+                <i class="fas fa-star mr-2"></i>CSAT Processing
+            </button>
+        </div>
+
+        <!-- Chat Processing Tab -->
+        <div id="chat-content" class="tab-content">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-comments text-blue-500 mr-3"></i>Chat Data Processing
+                </h2>
+                <p class="text-gray-600 mb-6">
+                    Upload your chat files - the app will automatically detect Live Chat, LINE, or WeChat data and intelligently map columns.
+                </p>
+
+                <!-- File Upload Area -->
+                <div class="upload-area rounded-lg p-8 text-center mb-6" id="chat-upload-area">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-lg font-medium text-gray-700 mb-2">Drop your Excel files here or click to browse</p>
+                    <p class="text-sm text-gray-500 mb-4">Supports .xlsx and .xls files (max 16MB)</p>
+                    <input type="file" id="chat-files" multiple accept=".xlsx,.xls" class="hidden">
+                    <button onclick="document.getElementById('chat-files').click()" 
+                            class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition-colors">
+                        Select Files
+                    </button>
+                </div>
+
+                <!-- File List -->
+                <div id="chat-file-list" class="hidden mb-6">
+                    <h3 class="text-lg font-semibold mb-4">Select Sheets to Process:</h3>
+                    <div id="chat-sheet-selection" class="space-y-4"></div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex space-x-4 mb-6">
+                    <button id="analyze-chat-btn" onclick="analyzeSheets('chat')" 
+                            class="bg-purple-500 hover:bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50" disabled>
+                        <i class="fas fa-search mr-2"></i>Analyze Data
+                    </button>
+                    <button id="process-chat-btn" onclick="processChat()" 
+                            class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50" disabled>
+                        <i class="fas fa-cogs mr-2"></i>Process Files
+                    </button>
+                </div>
+
+                <!-- Detection Results -->
+                <div id="chat-detection-results" class="hidden"></div>
+
+                <!-- Download Section -->
+                <div id="chat-download" class="hidden bg-green-50 border border-green-200 rounded-lg p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="text-lg font-semibold text-green-800">✅ Master Chat Ready!</h4>
+                            <p class="text-green-600" id="chat-result-info"></p>
+                        </div>
+                        <a id="chat-download-link" href="#" 
+                           class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-download mr-2"></i>Download Master Chat
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Case Processing Tab -->
+        <div id="case-content" class="tab-content">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-folder text-orange-500 mr-3"></i>Case Data Processing
+                </h2>
+                <p class="text-gray-600 mb-6">
+                    Upload your APAC Case volume file to create master_case with proper structure and formatting.
+                </p>
+
+                <!-- File Upload Area -->
+                <div class="upload-area rounded-lg p-8 text-center mb-6" id="case-upload-area">
+                    <i class="fas fa-file-excel text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-lg font-medium text-gray-700 mb-2">Drop your Case files here or click to browse</p>
+                    <p class="text-sm text-gray-500 mb-4">Supports multiple .xlsx and .xls files (max 16MB each)</p>
+                    <input type="file" id="case-files" multiple accept=".xlsx,.xls" class="hidden">
+                    <button onclick="document.getElementById('case-files').click()" 
+                            class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-colors">
+                        Select Case Files
+                    </button>
+                </div>
+
+                <!-- File List -->
+                <div id="case-file-list" class="hidden mb-6">
+                    <h3 class="text-lg font-semibold mb-4">Select Sheets to Process:</h3>
+                    <div id="case-sheet-selection" class="space-y-4"></div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex space-x-4 mb-6">
+                    <button id="analyze-case-btn" onclick="analyzeSheets('case')" 
+                            class="bg-purple-500 hover:bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50" disabled>
+                        <i class="fas fa-search mr-2"></i>Analyze Data
+                    </button>
+                    <button id="process-case-btn" onclick="processCase()" 
+                            class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50" disabled>
+                        <i class="fas fa-cogs mr-2"></i>Process Files
+                    </button>
+                </div>
+
+                <!-- Detection Results -->
+                <div id="case-detection-results" class="hidden"></div>
+
+                <!-- Download Section -->
+                <div id="case-download" class="hidden bg-green-50 border border-green-200 rounded-lg p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="text-lg font-semibold text-green-800">✅ Master Case Ready!</h4>
+                            <p class="text-green-600" id="case-result-info"></p>
+                        </div>
+                        <a id="case-download-link" href="#" 
+                           class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-download mr-2"></i>Download Master Case
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CSAT Processing Tab -->
+        <div id="csat-content" class="tab-content">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-star text-yellow-500 mr-3"></i>CSAT Rating Processing
+                </h2>
+                <p class="text-gray-600 mb-6">
+                    Upload your Chat and Case rating files to create master_rating with combined CSAT data.
+                </p>
+
+                <div class="grid md:grid-cols-2 gap-6 mb-6">
+                    <!-- Chat Ratings -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold">Chat Ratings</h3>
+                        <div class="upload-area rounded-lg p-6 text-center">
+                            <i class="fas fa-comment-dots text-3xl text-gray-400 mb-3"></i>
+                            <p class="font-medium text-gray-700 mb-2">APAC Chat Ratings</p>
+                            <input type="file" id="chat-rating-file" accept=".xlsx,.xls" class="hidden">
+                            <button onclick="document.getElementById('chat-rating-file').click()" 
+                                    class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded transition-colors">
+                                Select File
+                            </button>
+                        </div>
+                        <div id="chat-rating-sheet-selection" class="hidden">
+                            <h4 class="text-sm font-semibold mb-2">Select Sheet:</h4>
+                            <div id="chat-rating-sheet-options" class="space-y-1">
+                                <!-- Sheet options will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Case Ratings -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold">Case Ratings</h3>
+                        <div class="upload-area rounded-lg p-6 text-center">
+                            <i class="fas fa-folder-plus text-3xl text-gray-400 mb-3"></i>
+                            <p class="font-medium text-gray-700 mb-2">Case Rating File</p>
+                            <input type="file" id="case-rating-file" accept=".xlsx,.xls" class="hidden">
+                            <button onclick="document.getElementById('case-rating-file').click()" 
+                                    class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded transition-colors">
+                                Select File
+                            </button>
+                        </div>
+                        <div id="case-rating-sheet-selection" class="hidden">
+                            <h4 class="text-sm font-semibold mb-2">Select Sheet:</h4>
+                            <div id="case-rating-sheet-options" class="space-y-1">
+                                <!-- Sheet options will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Process Button -->
+                <div class="mb-6">
+                    <button id="process-rating-btn" onclick="processRating()" 
+                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50" disabled>
+                        <i class="fas fa-cogs mr-2"></i>Process Rating Files
+                    </button>
+                </div>
+
+                <!-- Download Section -->
+                <div id="rating-download" class="hidden bg-green-50 border border-green-200 rounded-lg p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="text-lg font-semibold text-green-800">✅ Master Rating Ready!</h4>
+                            <p class="text-green-600" id="rating-result-info"></p>
+                        </div>
+                        <a id="rating-download-link" href="#" 
+                           class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-download mr-2"></i>Download Master Rating
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mt-8">
+            <h3 class="text-lg font-semibold text-blue-800 mb-4">
+                <i class="fas fa-info-circle mr-2"></i>Google Sheets Upload Instructions
+            </h3>
+            <div class="grid md:grid-cols-4 gap-4 text-sm text-blue-700">
+                <div class="flex items-start space-x-2">
+                    <span class="bg-blue-200 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">1</span>
+                    <span>Download the processed master files using the buttons above</span>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <span class="bg-blue-200 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">2</span>
+                    <span>Open your Google Sheets dashboard</span>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <span class="bg-blue-200 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">3</span>
+                    <span>Upload/import the Excel files to update your data source</span>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <span class="bg-blue-200 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">4</span>
+                    <span>Refresh your Looker Studio dashboard</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 text-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p class="text-lg font-medium">Processing your files...</p>
+            <p class="text-sm text-gray-600">This may take a few moments</p>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let uploadedFiles = {};
+        let analysisResults = {};
+
+        // Tab switching
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active state from all tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('text-blue-600', 'border-blue-500');
+                btn.classList.add('text-gray-500');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + '-content').classList.add('active');
+            
+            // Add active state to selected tab button
+            const activeBtn = document.getElementById(tabName + '-tab');
+            activeBtn.classList.add('text-blue-600', 'border-blue-500');
+            activeBtn.classList.remove('text-gray-500');
+        }
+
+        // Initialize first tab
+        document.addEventListener('DOMContentLoaded', function() {
+            switchTab('chat');
+            setupFileHandlers();
+        });
+
+        // Setup file upload handlers
+        function setupFileHandlers() {
+            // Chat files
+            const chatFiles = document.getElementById('chat-files');
+            const chatUploadArea = document.getElementById('chat-upload-area');
+            
+            chatFiles.addEventListener('change', function(e) {
+                handleChatFiles(e.target.files);
+            });
+
+            // Drag and drop for chat files
+            chatUploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.classList.add('dragover');
+            });
+
+            chatUploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.classList.remove('dragover');
+            });
+
+            chatUploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('dragover');
+                handleChatFiles(e.dataTransfer.files);
+            });
+
+            // Case files
+            const caseFiles = document.getElementById('case-files');
+            const caseUploadArea = document.getElementById('case-upload-area');
+            
+            caseFiles.addEventListener('change', function(e) {
+                handleCaseFiles(e.target.files);
+            });
+
+            // Drag and drop for case files
+            caseUploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.classList.add('dragover');
+            });
+
+            caseUploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.classList.remove('dragover');
+            });
+
+            caseUploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('dragover');
+                handleCaseFiles(e.dataTransfer.files);
+            });
+
+            // Rating files
+            document.getElementById('chat-rating-file').addEventListener('change', function(e) {
+                handleRatingFile(e.target.files[0], 'chat');
+            });
+
+            document.getElementById('case-rating-file').addEventListener('change', function(e) {
+                handleRatingFile(e.target.files[0], 'case');
+            });
+        }
+
+        // Handle chat file uploads
+        function handleChatFiles(files) {
+            if (files.length === 0) return;
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files[]', file);
+            }
+
+            showLoading();
+            
+            fetch('/upload_files', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                uploadedFiles.chat = data.files;
+                displayChatFileList(data.files);
+                document.getElementById('analyze-chat-btn').disabled = false;
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error uploading files: ' + error.message);
+            });
+        }
+
+        // Display chat file list with sheet selection
+        function displayChatFileList(files) {
+            const fileList = document.getElementById('chat-file-list');
+            const sheetSelection = document.getElementById('chat-sheet-selection');
+            
+            sheetSelection.innerHTML = '';
+            
+            files.forEach((file, index) => {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'bg-gray-50 rounded-lg p-4 border';
+                fileDiv.innerHTML = `
+                    <h4 class="font-medium mb-3">${file.original_name}</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        ${file.sheets.map(sheet => `
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" class="sheet-checkbox" 
+                                       data-file-index="${index}" 
+                                       data-file-path="${file.file_path}"
+                                       data-sheet="${sheet}" 
+                                       data-file-name="${file.original_name}"
+                                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm">${sheet}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                `;
+                sheetSelection.appendChild(fileDiv);
+            });
+            
+            fileList.classList.remove('hidden');
+        }
+
+        // Analyze selected sheets
+        function analyzeSheets(type) {
+            let checkboxes;
+            
+            if (type === 'chat') {
+                checkboxes = document.querySelectorAll('.sheet-checkbox:checked');
+            } else if (type === 'case') {
+                checkboxes = document.querySelectorAll('.case-sheet-checkbox:checked');
+            }
+            
+            if (checkboxes.length === 0) {
+                showError('Please select at least one sheet to analyze.');
+                return;
+            }
+
+            const selectedSheets = Array.from(checkboxes).map(cb => ({
+                file_path: cb.dataset.filePath,
+                sheet_name: cb.dataset.sheet,
+                file_name: cb.dataset.fileName
+            }));
+
+            showLoading();
+
+            fetch('/analyze_sheets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ selected_sheets: selectedSheets })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                analysisResults[type] = data.results;
+                displayAnalysisResults(data.results, type);
+                
+                if (type === 'chat') {
+                    document.getElementById('process-chat-btn').disabled = false;
+                } else if (type === 'case') {
+                    document.getElementById('process-case-btn').disabled = false;
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error analyzing sheets: ' + error.message);
+            });
+        }
+
+        // Display analysis results
+        function displayAnalysisResults(results, type) {
+            const resultsDiv = document.getElementById(type + '-detection-results');
+            resultsDiv.innerHTML = '';
+
+            const resultsContainer = document.createElement('div');
+            resultsContainer.className = 'space-y-4';
+            resultsContainer.innerHTML = '<h3 class="text-lg font-semibold mb-4">🔍 Detection Results</h3>';
+
+            results.forEach((result, index) => {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'bg-gray-50 rounded-lg p-4 border';
+                
+                const confidenceColor = result.confidence > 0.7 ? 'text-green-600' : 
+                                       result.confidence > 0.4 ? 'text-yellow-600' : 'text-red-600';
+                
+                resultDiv.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <h4 class="font-medium">${result.file_name} - ${result.sheet_name}</h4>
+                            <p class="text-sm text-gray-600">Detected: ${result.detected_type.replace('_', ' ')} 
+                               <span class="${confidenceColor}">(${(result.confidence * 100).toFixed(1)}% confidence)</span>
+                            </p>
+                        </div>
+                        <div class="text-right text-sm text-gray-500">
+                            <div>${result.rows} rows</div>
+                            <div>${result.columns} columns</div>
+                        </div>
+                    </div>
+                    
+                    ${result.indicators && result.indicators.length > 0 ? `
+                        <div class="mb-3">
+                            <p class="text-sm font-medium text-gray-700 mb-1">Detection reasons:</p>
+                            <div class="text-xs text-gray-600">
+                                ${result.indicators.map(ind => `<div>• ${ind}</div>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="flex items-center space-x-4">
+                        <label class="text-sm font-medium">Override type:</label>
+                        <select class="type-override text-sm border rounded px-2 py-1" data-index="${index}">
+                            <option value="${result.detected_type}">Keep detected (${result.detected_type})</option>
+                            <option value="live_chat">Live Chat</option>
+                            <option value="line_chat">LINE Chat</option>
+                            <option value="wechat_chat">WeChat Chat</option>
+                            <option value="case_data">Case Data</option>
+                            <option value="skip">Skip this file</option>
+                        </select>
+                    </div>
+                `;
+                
+                resultsContainer.appendChild(resultDiv);
+            });
+
+            resultsDiv.appendChild(resultsContainer);
+            resultsDiv.classList.remove('hidden');
+        }
+
+        // Process chat files
+        function processChat() {
+            if (!analysisResults.chat) {
+                showError('Please analyze files first.');
+                return;
+            }
+
+            // Get any manual overrides
+            const overrides = document.querySelectorAll('.type-override');
+            const confirmedFiles = analysisResults.chat.map((result, index) => {
+                const override = overrides[index];
+                return {
+                    ...result,
+                    detected_type: override ? override.value : result.detected_type
+                };
+            });
+
+            showLoading();
+
+            fetch('/process_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirmed_files: confirmedFiles })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showChatDownload(data);
+                } else {
+                    showError('Error processing chat files: ' + data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error processing chat files: ' + error.message);
+            });
+        }
+
+        // Handle case file uploads (multiple files)
+        function handleCaseFiles(files) {
+            if (files.length === 0) return;
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files[]', file);
+            }
+
+            showLoading();
+            
+            fetch('/upload_files', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                uploadedFiles.case = data.files;
+                displayCaseFileList(data.files);
+                document.getElementById('analyze-case-btn').disabled = false;
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error uploading files: ' + error.message);
+            });
+        }
+
+        // Display case file list with sheet selection
+        function displayCaseFileList(files) {
+            const fileList = document.getElementById('case-file-list');
+            const sheetSelection = document.getElementById('case-sheet-selection');
+            
+            sheetSelection.innerHTML = '';
+            
+            files.forEach((file, index) => {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'bg-gray-50 rounded-lg p-4 border';
+                fileDiv.innerHTML = `
+                    <h4 class="font-medium mb-3">${file.original_name}</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        ${file.sheets.map(sheet => `
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" class="case-sheet-checkbox rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                       data-file-index="${index}" 
+                                       data-file-path="${file.file_path}"
+                                       data-sheet="${sheet}" 
+                                       data-file-name="${file.original_name}">
+                                <span class="text-sm">${sheet}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                `;
+                sheetSelection.appendChild(fileDiv);
+            });
+            
+            fileList.classList.remove('hidden');
+        }
+
+        // Process case file
+        function processCase() {
+            if (!analysisResults.case) {
+                showError('Please analyze files first.');
+                return;
+            }
+
+            // Get any manual overrides
+            const overrides = document.querySelectorAll('#case-detection-results .type-override');
+            const confirmedFiles = analysisResults.case.map((result, index) => {
+                const override = overrides[index];
+                return {
+                    ...result,
+                    detected_type: override ? override.value : result.detected_type
+                };
+            });
+
+            showLoading();
+
+            fetch('/process_case', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirmed_files: confirmedFiles })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showCaseDownload(data);
+                } else {
+                    showError('Error processing case files: ' + data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error processing case files: ' + error.message);
+            });
+        }
+
+        // Handle rating file uploads
+        function handleRatingFile(file, type) {
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('files[]', file);
+
+            showLoading();
+
+            fetch('/upload_files', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                const fileInfo = data.files[0];
+                
+                if (!uploadedFiles.rating) uploadedFiles.rating = {};
+                uploadedFiles.rating[type] = fileInfo;
+                
+                // Populate sheet options with radio buttons
+                const sheetOptions = document.getElementById(type + '-rating-sheet-options');
+                sheetOptions.innerHTML = '';
+                fileInfo.sheets.forEach((sheet, index) => {
+                    const sheetDiv = document.createElement('div');
+                    sheetDiv.innerHTML = `
+                        <label class="flex items-center space-x-2 cursor-pointer p-2 rounded hover:bg-gray-100">
+                            <input type="radio" name="${type}-rating-sheet" value="${sheet}" 
+                                   class="text-yellow-600 focus:ring-yellow-500" 
+                                   ${index === 0 ? 'checked' : ''}>
+                            <span class="text-sm">${sheet}</span>
+                        </label>
+                    `;
+                    sheetOptions.appendChild(sheetDiv);
+                });
+                
+                document.getElementById(type + '-rating-sheet-selection').classList.remove('hidden');
+                
+                // Enable process button if we have at least one file
+                if (uploadedFiles.rating.chat || uploadedFiles.rating.case) {
+                    document.getElementById('process-rating-btn').disabled = false;
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error uploading rating file: ' + error.message);
+            });
+        }
+
+        // Process rating files
+        function processRating() {
+            const chatSheetInput = document.querySelector('input[name="chat-rating-sheet"]:checked');
+            const caseSheetInput = document.querySelector('input[name="case-rating-sheet"]:checked');
+
+            const chatSheet = chatSheetInput ? chatSheetInput.value : null;
+            const caseSheet = caseSheetInput ? caseSheetInput.value : null;
+
+            if (!chatSheet && !caseSheet) {
+                showError('Please select at least one rating file and sheet.');
+                return;
+            }
+
+            showLoading();
+
+            const payload = {};
+            
+            if (uploadedFiles.rating?.chat && chatSheet) {
+                payload.chat_file_path = uploadedFiles.rating.chat.file_path;
+                payload.chat_sheet = chatSheet;
+            }
+            
+            if (uploadedFiles.rating?.case && caseSheet) {
+                payload.case_file_path = uploadedFiles.rating.case.file_path;
+                payload.case_sheet = caseSheet;
+            }
+
+            fetch('/process_rating', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showRatingDownload(data);
+                } else {
+                    showError('Error processing rating files: ' + data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error processing rating files: ' + error.message);
+            });
+        }
+
+        // Show download sections
+        function showChatDownload(data) {
+            document.getElementById('chat-result-info').textContent = 
+                `${data.rows.toLocaleString()} rows, ${data.columns} columns processed successfully`;
+            document.getElementById('chat-download-link').href = data.download_url;
+            document.getElementById('chat-download').classList.remove('hidden');
+        }
+
+        function showCaseDownload(data) {
+            document.getElementById('case-result-info').textContent = 
+                `${data.rows.toLocaleString()} rows, ${data.columns} columns processed successfully`;
+            document.getElementById('case-download-link').href = data.download_url;
+            document.getElementById('case-download').classList.remove('hidden');
+        }
+
+        function showRatingDownload(data) {
+            document.getElementById('rating-result-info').textContent = 
+                `${data.rows.toLocaleString()} rows, ${data.columns} columns processed successfully`;
+            document.getElementById('rating-download-link').href = data.download_url;
+            document.getElementById('rating-download').classList.remove('hidden');
+        }
+
+        // Utility functions
+        function showLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        function showError(message) {
+            alert('Error: ' + message); // You could replace this with a nicer toast notification
+        }
+    </script>
+</body>
+</html>
