@@ -28,6 +28,17 @@
             border-color: #667eea;
             background-color: #edf2f7;
         }
+        .debug-info {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -71,7 +82,7 @@
                     <i class="fas fa-comments text-blue-500 mr-3"></i>Chat Data Processing
                 </h2>
                 <p class="text-gray-600 mb-6">
-                    Upload your chat files - the app will automatically detect Live Chat, LINE, or WeChat data and intelligently map columns.
+                    Upload your chat files - the app will automatically detect Live Chat (SF), LINE, or WeChat data and intelligently map columns.
                 </p>
 
                 <!-- File Upload Area -->
@@ -106,6 +117,12 @@
 
                 <!-- Detection Results -->
                 <div id="chat-detection-results" class="hidden"></div>
+
+                <!-- Processing Debug Info -->
+                <div id="chat-debug-info" class="hidden">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">🔧 Processing Debug Info:</h4>
+                    <div id="chat-debug-content" class="debug-info"></div>
+                </div>
 
                 <!-- Download Section -->
                 <div id="chat-download" class="hidden bg-green-50 border border-green-200 rounded-lg p-6">
@@ -403,20 +420,30 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 hideLoading();
+                if (data.success === false) {
+                    showError('Upload failed: ' + data.error);
+                    return;
+                }
                 uploadedFiles.chat = data.files;
                 displayChatFileList(data.files);
                 document.getElementById('analyze-chat-btn').disabled = false;
             })
             .catch(error => {
                 hideLoading();
+                console.error('Upload error:', error);
                 showError('Error uploading files: ' + error.message);
             });
         }
 
-        // Display chat file list with sheet selection
+        // Display chat file list with sheet selection - FIXED VERSION
         function displayChatFileList(files) {
             const fileList = document.getElementById('chat-file-list');
             const sheetSelection = document.getElementById('chat-sheet-selection');
@@ -431,12 +458,11 @@
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
                         ${file.sheets.map(sheet => `
                             <label class="flex items-center space-x-2 cursor-pointer">
-                                <input type="checkbox" class="sheet-checkbox" 
+                                <input type="checkbox" class="sheet-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
                                        data-file-index="${index}" 
                                        data-file-path="${file.file_path}"
                                        data-sheet="${sheet}" 
-                                       data-file-name="${file.original_name}"
-                                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                       data-file-name="${file.original_name}">
                                 <span class="text-sm">${sheet}</span>
                             </label>
                         `).join('')}
@@ -469,6 +495,7 @@
                 file_name: cb.dataset.fileName
             }));
 
+            console.log('Selected sheets for analysis:', selectedSheets);
             showLoading();
 
             fetch('/analyze_sheets', {
@@ -479,6 +506,7 @@
             .then(response => response.json())
             .then(data => {
                 hideLoading();
+                console.log('Analysis results:', data);
                 analysisResults[type] = data.results;
                 displayAnalysisResults(data.results, type);
                 
@@ -490,6 +518,7 @@
             })
             .catch(error => {
                 hideLoading();
+                console.error('Analysis error:', error);
                 showError('Error analyzing sheets: ' + error.message);
             });
         }
@@ -537,7 +566,7 @@
                         <label class="text-sm font-medium">Override type:</label>
                         <select class="type-override text-sm border rounded px-2 py-1" data-index="${index}">
                             <option value="${result.detected_type}">Keep detected (${result.detected_type})</option>
-                            <option value="live_chat">Live Chat</option>
+                            <option value="live_chat">Live Chat (SF)</option>
                             <option value="line_chat">LINE Chat</option>
                             <option value="wechat_chat">WeChat Chat</option>
                             <option value="case_data">Case Data</option>
@@ -561,7 +590,7 @@
             }
 
             // Get any manual overrides
-            const overrides = document.querySelectorAll('.type-override');
+            const overrides = document.querySelectorAll('#chat-detection-results .type-override');
             const confirmedFiles = analysisResults.chat.map((result, index) => {
                 const override = overrides[index];
                 return {
@@ -570,6 +599,7 @@
                 };
             });
 
+            console.log('Processing chat files:', confirmedFiles);
             showLoading();
 
             fetch('/process_chat', {
@@ -580,19 +610,22 @@
             .then(response => response.json())
             .then(data => {
                 hideLoading();
+                console.log('Chat processing result:', data);
                 if (data.success) {
                     showChatDownload(data);
+                    showDebugInfo('chat', 'Processing completed successfully');
                 } else {
                     showError('Error processing chat files: ' + data.error);
                 }
             })
             .catch(error => {
                 hideLoading();
+                console.error('Processing error:', error);
                 showError('Error processing chat files: ' + error.message);
             });
         }
 
-        // Handle case file uploads (multiple files)
+        // Handle case file uploads
         function handleCaseFiles(files) {
             if (files.length === 0) return;
 
@@ -607,20 +640,30 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 hideLoading();
+                if (data.success === false) {
+                    showError('Upload failed: ' + data.error);
+                    return;
+                }
                 uploadedFiles.case = data.files;
                 displayCaseFileList(data.files);
                 document.getElementById('analyze-case-btn').disabled = false;
             })
             .catch(error => {
                 hideLoading();
+                console.error('Upload error:', error);
                 showError('Error uploading files: ' + error.message);
             });
         }
 
-        // Display case file list with sheet selection
+        // Display case file list with sheet selection - FIXED VERSION
         function displayCaseFileList(files) {
             const fileList = document.getElementById('case-file-list');
             const sheetSelection = document.getElementById('case-sheet-selection');
@@ -668,6 +711,7 @@
                 };
             });
 
+            console.log('Processing case files:', confirmedFiles);
             showLoading();
 
             fetch('/process_case', {
@@ -678,6 +722,7 @@
             .then(response => response.json())
             .then(data => {
                 hideLoading();
+                console.log('Case processing result:', data);
                 if (data.success) {
                     showCaseDownload(data);
                 } else {
@@ -686,6 +731,7 @@
             })
             .catch(error => {
                 hideLoading();
+                console.error('Processing error:', error);
                 showError('Error processing case files: ' + error.message);
             });
         }
@@ -703,9 +749,18 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 hideLoading();
+                if (data.success === false) {
+                    showError('Upload failed: ' + data.error);
+                    return;
+                }
                 const fileInfo = data.files[0];
                 
                 if (!uploadedFiles.rating) uploadedFiles.rating = {};
@@ -736,6 +791,7 @@
             })
             .catch(error => {
                 hideLoading();
+                console.error('Upload error:', error);
                 showError('Error uploading rating file: ' + error.message);
             });
         }
@@ -767,6 +823,8 @@
                 payload.case_sheet = caseSheet;
             }
 
+            console.log('Processing rating files:', payload);
+
             fetch('/process_rating', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -775,6 +833,7 @@
             .then(response => response.json())
             .then(data => {
                 hideLoading();
+                console.log('Rating processing result:', data);
                 if (data.success) {
                     showRatingDownload(data);
                 } else {
@@ -783,6 +842,7 @@
             })
             .catch(error => {
                 hideLoading();
+                console.error('Processing error:', error);
                 showError('Error processing rating files: ' + error.message);
             });
         }
@@ -809,6 +869,19 @@
             document.getElementById('rating-download').classList.remove('hidden');
         }
 
+        // Show debug information
+        function showDebugInfo(type, message) {
+            const debugDiv = document.getElementById(type + '-debug-info');
+            const debugContent = document.getElementById(type + '-debug-content');
+            
+            if (debugDiv && debugContent) {
+                const timestamp = new Date().toLocaleTimeString();
+                debugContent.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                debugDiv.classList.remove('hidden');
+                debugContent.scrollTop = debugContent.scrollHeight;
+            }
+        }
+
         // Utility functions
         function showLoading() {
             document.getElementById('loading-overlay').classList.remove('hidden');
@@ -819,7 +892,53 @@
         }
 
         function showError(message) {
-            alert('Error: ' + message); // You could replace this with a nicer toast notification
+            console.error('Error:', message);
+            // Create a better error notification
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+            notification.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        <span class="text-sm">${message}</span>
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 8000);
+        }
+
+        function showSuccess(message) {
+            console.log('Success:', message);
+            // Create a success notification
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+            notification.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-check mr-2"></i>
+                        <span class="text-sm">${message}</span>
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 5000);
         }
     </script>
 </body>
