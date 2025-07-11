@@ -452,6 +452,15 @@ def process_case_files(file_data_list):
                 )
                 df[col] = pd.to_datetime(df[col], errors='coerce')
                 print(f"Converted date column: {col}")
+                
+         # Map 'Created By' to 'Case Creator' 
+        if 'Created By' in df.columns:
+            df['Case Creator'] = df['Created By']
+            creator_count = df['Case Creator'].notna().sum()
+            print(f"✅ Mapped 'Created By' → 'Case Creator': {creator_count} values copied")
+        else:
+            print("⚠️ Warning: 'Created By' column not found in source data")
+  
         
         # Create case_created_date as date-only version of Case: Created Date/Time
         if 'Case: Created Date/Time' in df.columns:
@@ -503,6 +512,13 @@ def process_case_files(file_data_list):
     combined_case = pd.concat(all_case_data, ignore_index=True, sort=False)
     
     print(f"Final combined_case has {len(combined_case)} rows")
+    
+    # VERIFICATION: Check if Case Creator is properly populated
+    if 'Case Creator' in combined_case.columns:
+        creator_count = combined_case['Case Creator'].notna().sum()
+        total_rows = len(combined_case)
+        print(f"✅ Final verification: Case Creator has {creator_count} non-null values out of {total_rows} total rows")
+
     
     # Use exact cases_main column order
     cases_main_columns_order = [
