@@ -408,6 +408,13 @@ def process_case_files(file_data_list):
         
         print(f"Processing case file with {len(df)} rows")
         
+        # ✅ DEBUG: Check initial Case Creator values
+        if 'Case Creator' in df.columns:
+            initial_creator_count = df['Case Creator'].notna().sum()
+            print(f"🔍 Initial Case Creator non-null values: {initial_creator_count}")
+            sample_values = df['Case Creator'].dropna().head(3).tolist()
+            print(f"🔍 Initial Case Creator samples: {sample_values}")
+        
         # Preserve Case Number as string
         if 'Case Number' in df.columns:
             df['Case Number'] = df['Case Number'].astype(str)
@@ -423,10 +430,11 @@ def process_case_files(file_data_list):
             'Age'
         ]
         
-        # Text/boolean columns that should NOT be treated as numerical or dates
+        # ✅ UPDATED: Include both Created By and Case Creator in text columns
         text_columns = [
             'First Response Time Met', 'Working hours (Y/N)', 'First contact resolution',
-            'Premium Client Qualified', 'Case Status', 'Case: Closed'
+            'Premium Client Qualified', 'Case Status', 'Case: Closed', 
+            'Created By', 'Case Creator'  # ✅ Added both creator fields
         ]
         
         # Clean numerical columns (ensure they stay as numbers)
@@ -436,13 +444,21 @@ def process_case_files(file_data_list):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 print(f"Cleaned numerical column: {col}")
         
-        # Ensure text columns stay as text (don't convert to numeric or dates)
+        # ✅ UPDATED: More careful text column preservation
         for col in text_columns:
             if col in df.columns:
-                # Keep as text, just clean any Excel artifacts
-                df[col] = df[col].astype(str).replace(['nan', 'NaT', 'None'], '')
-                df[col] = df[col].replace('', None)  # Convert empty strings back to None/NaN
+                # Keep as text, but be more careful with NaN handling
+                df[col] = df[col].astype(str)
+                # Only replace actual 'nan' strings, not valid data
+                df[col] = df[col].replace(['nan', 'NaT', 'None'], '')
+                # Convert empty strings to None, but preserve actual text values
+                df[col] = df[col].apply(lambda x: None if x == '' else x)
                 print(f"Preserved text column: {col}")
+                
+                # ✅ DEBUG: Check Case Creator after text processing
+                if col == 'Case Creator':
+                    after_text_count = df['Case Creator'].notna().sum()
+                    print(f"🔍 Case Creator after text processing: {after_text_count} non-null values")
         
         # Convert only actual date fields to datetime objects
         for col in actual_date_columns:
@@ -452,15 +468,6 @@ def process_case_files(file_data_list):
                 )
                 df[col] = pd.to_datetime(df[col], errors='coerce')
                 print(f"Converted date column: {col}")
-                
-         # Map 'Created By' to 'Case Creator' 
-        if 'Created By' in df.columns:
-            df['Case Creator'] = df['Created By']
-            creator_count = df['Case Creator'].notna().sum()
-            print(f"✅ Mapped 'Created By' → 'Case Creator': {creator_count} values copied")
-        else:
-            print("⚠️ Warning: 'Created By' column not found in source data")
-  
         
         # Create case_created_date as date-only version of Case: Created Date/Time
         if 'Case: Created Date/Time' in df.columns:
@@ -496,12 +503,15 @@ def process_case_files(file_data_list):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 print(f"Re-cleaned numerical column after date processing: {col}")
         
-        # Re-preserve text columns AFTER date processing
-        for col in text_columns:
-            if col in df.columns:
-                df[col] = df[col].astype(str).replace(['nan', 'NaT', 'None'], '')
-                df[col] = df[col].replace('', None)
-                print(f"Re-preserved text column after date processing: {col}")
+        # ✅ REMOVED: The problematic re-preserve text columns logic that was overwriting data
+        # The text columns were already processed above, no need to re-process them
+        
+        # ✅ FINAL DEBUG: Check Case Creator before adding to combined data
+        if 'Case Creator' in df.columns:
+            final_creator_count = df['Case Creator'].notna().sum()
+            print(f"🔍 Final Case Creator non-null values: {final_creator_count}")
+            sample_values = df['Case Creator'].dropna().head(3).tolist()
+            print(f"🔍 Final Case Creator samples: {sample_values}")
         
         all_case_data.append(df)
     
@@ -513,14 +523,7 @@ def process_case_files(file_data_list):
     
     print(f"Final combined_case has {len(combined_case)} rows")
     
-    # VERIFICATION: Check if Case Creator is properly populated
-    if 'Case Creator' in combined_case.columns:
-        creator_count = combined_case['Case Creator'].notna().sum()
-        total_rows = len(combined_case)
-        print(f"✅ Final verification: Case Creator has {creator_count} non-null values out of {total_rows} total rows")
-
-    
-    # Use exact cases_main column order
+    # ✅ UPDATED: More careful column addition - only add if truly missing
     cases_main_columns_order = [
         'Account Billing Country', 'Case Number', 'Case Reason', 'Case Owner',
         'Account Name', 'Case Subject', 'Premium Client Qualified', 'Created By',
@@ -534,13 +537,33 @@ def process_case_files(file_data_list):
         'First Response Time Met', 'case_created_date'
     ]
     
+    # ✅ CAREFUL: Only add columns that are truly missing, don't overwrite existing data
     for col in cases_main_columns_order:
         if col not in combined_case.columns:
             combined_case[col] = None
+            print(f"Added missing column: {col}")
+    
+    # ✅ FINAL VERIFICATION: Check preserved data
+    if 'Case Creator' in combined_case.columns:
+        creator_count = combined_case['Case Creator'].notna().sum()
+        created_by_count = combined_case['Created By'].notna().sum()
+        total_rows = len(combined_case)
+        print(f"✅ Final verification:")
+        print(f"   Created By: {created_by_count} non-null values")
+        print(f"   Case Creator: {creator_count} non-null values")
+        print(f"   Total rows: {total_rows}")
+        
+        # Show sample values for debugging
+        if creator_count > 0:
+            sample_creators = combined_case['Case Creator'].dropna().head(3).tolist()
+            print(f"✅ Sample Case Creator values: {sample_creators}")
+        if created_by_count > 0:
+            sample_created_by = combined_case['Created By'].dropna().head(3).tolist()
+            print(f"✅ Sample Created By values: {sample_created_by}")
     
     combined_case = combined_case[cases_main_columns_order]
     return combined_case
-
+    
 def process_rating_files(chat_file_path, chat_sheet, case_file_path, case_sheet):
     """Process rating files and return master_rating dataframe"""
     try:
