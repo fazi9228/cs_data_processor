@@ -88,10 +88,19 @@ def standardize_date_columns(df):
     return df
 
 def save_excel_with_proper_formatting(df, output_path):
-    """Save DataFrame to Excel - SIMPLIFIED VERSION LIKE YOUR WORKING CODE"""
+    """Save DataFrame to Excel - FIXED VERSION TO PRESERVE TEXT DATA"""
     try:
-        # Standardize date columns before saving
-        df_formatted = standardize_date_columns(df.copy())
+        # ✅ FIX: Don't call standardize_date_columns which corrupts text data
+        # The data is already properly processed by process_case_files
+        df_formatted = df.copy()  # Just copy, don't standardize again
+        
+        # ✅ DEBUG: Check Created By before saving
+        if 'Created By' in df_formatted.columns:
+            created_by_count = df_formatted['Created By'].notna().sum()
+            print(f"🔍 EXCEL SAVE: 'Created By' has {created_by_count} non-null values before saving")
+            if created_by_count > 0:
+                sample_values = df_formatted['Created By'].dropna().head(3).tolist()
+                print(f"🔍 EXCEL SAVE: Sample Created By values: {sample_values}")
         
         # Use ExcelWriter for better control over formatting
         with pd.ExcelWriter(output_path, engine='openpyxl', date_format='YYYY-MM-DD HH:MM:SS') as writer:
@@ -101,11 +110,11 @@ def save_excel_with_proper_formatting(df, output_path):
             workbook = writer.book
             worksheet = writer.sheets['Sheet1']
             
-            # Define date/datetime columns for specific formatting
-            date_columns = [
+            # ✅ UPDATED: Only format actual date columns, not text columns
+            actual_date_columns = [
+                'Case: Created Date/Time', 'Created Date', 'First Response',
                 'Start Time', 'End Time', 'Chat Start Time', 'Actual Start Time', 
                 'Actual End Time', 'Last Modified Date', 'Agent Assigned Time',
-                'Created Date', 'Case: Created Date/Time', 'First Response',
                 'Feedback Created Date', 'case_created_date'
             ]
             
@@ -116,26 +125,53 @@ def save_excel_with_proper_formatting(df, output_path):
                 'Age', 'Days Since Last Response Time Stamp', 'Days Since Last Client Response'
             ]
             
-            # Apply formatting to date columns only
+            # ✅ CRITICAL: Only apply date formatting to confirmed date columns
             for col_idx, col_name in enumerate(df_formatted.columns, 1):
-                if any(date_col.lower() in col_name.lower() for date_col in date_columns):
+                # Only format if it's definitely a date column
+                if col_name in actual_date_columns:
                     col_letter = worksheet.cell(row=1, column=col_idx).column_letter
                     for row in range(2, len(df_formatted) + 2):  # Skip header row
                         cell = worksheet[f'{col_letter}{row}']
                         if cell.value is not None and not pd.isna(cell.value):
                             cell.number_format = 'MM/DD/YYYY HH:MM:SS'
+                # Force numerical columns to be numbers, not dates
                 elif any(num_col.lower() in col_name.lower() for num_col in numerical_columns):
-                    # Force numerical columns to be numbers, not dates
                     col_letter = worksheet.cell(row=1, column=col_idx).column_letter
                     for row in range(2, len(df_formatted) + 2):  # Skip header row
                         cell = worksheet[f'{col_letter}{row}']
                         if cell.value is not None and not pd.isna(cell.value):
                             cell.number_format = '0.00'  # Number format
+                # ✅ NEW: Leave text columns alone (including Created By, Case Creator)
+                else:
+                    # Don't apply any special formatting to text columns
+                    pass
+        
+        # ✅ DEBUG: Verify the saved file
+        print(f"✅ Excel file saved to: {output_path}")
+        
+        # Quick verification by reading back
+        try:
+            verification_df = pd.read_excel(output_path)
+            if 'Created By' in verification_df.columns:
+                saved_created_by_count = verification_df['Created By'].notna().sum()
+                print(f"🔍 VERIFICATION: Saved file has {saved_created_by_count} non-null 'Created By' values")
+                if saved_created_by_count > 0:
+                    saved_sample = verification_df['Created By'].dropna().head(3).tolist()
+                    print(f"🔍 VERIFICATION: Sample values in saved file: {saved_sample}")
+                else:
+                    print(f"❌ CRITICAL: Excel file was saved with null Created By values!")
+        except Exception as verify_error:
+            print(f"Could not verify saved file: {verify_error}")
                             
     except Exception as e:
         print(f"Warning: Formatting failed, using basic save: {e}")
-        # Fallback to basic save if formatting fails
-        df.to_excel(output_path, index=False)
+        # ✅ IMPROVED: Even the fallback preserves data better
+        try:
+            df.to_excel(output_path, index=False)
+            print(f"Used fallback Excel save to: {output_path}")
+        except Exception as fallback_error:
+            print(f"Even fallback save failed: {fallback_error}")
+            raise
 
 def create_date_columns(df, date_col):
     """Create Month, Week, Day, Hours columns from a date column"""
@@ -266,6 +302,12 @@ def smart_column_mapping(df, data_type):
         'Start Time': [
             'Start Time', 'start time', 'Request Time', 'request time',
             'Created Date', 'created date', 'Chat Start Time', 'chat start time'
+        ],
+        # ✅ NEW: Map Team to Owner Dept for LINE and WeChat
+        'Owner Dept': [
+            'Owner Dept', 'owner dept',  # For Live Chat (SF)
+            'Team', 'team',              # For LINE and WeChat  
+            'Agent Dept', 'agent dept'   # Fallback option
         ]
     }
     
@@ -283,6 +325,7 @@ def smart_column_mapping(df, data_type):
             if target_col in column_mapping:
                 break
     
+    # Set channel-specific values
     if data_type == 'live_chat':
         column_mapping['Channel'] = 'SF'
     elif data_type == 'line_chat':
@@ -464,19 +507,24 @@ def process_case_files(file_data_list):
         if detected_type != 'case_data':
             continue
         
-        print(f"Processing case file with {len(df)} rows")
-        
         # ✅ TRACK SOURCE ROWS
         source_rows = len(df)
         total_source_rows += source_rows
+        print(f"Processing case file with {source_rows} rows")
         print(f"📊 Source rows for this file: {source_rows}")
         
-        # ✅ DEBUG: Check initial Case Creator values
-        if 'Case Creator' in df.columns:
-            initial_creator_count = df['Case Creator'].notna().sum()
-            print(f"🔍 Initial Case Creator non-null values: {initial_creator_count}")
-            sample_values = df['Case Creator'].dropna().head(3).tolist()
-            print(f"🔍 Initial Case Creator samples: {sample_values}")
+        # ✅ DEBUG STEP 1: Check Created By immediately after reading Excel
+        print(f"\n🔍 STEP 1 - After reading Excel file:")
+        print(f"   DataFrame shape: {df.shape}")
+        print(f"   Columns: {list(df.columns)}")
+        if 'Created By' in df.columns:
+            created_by_count_1 = df['Created By'].notna().sum()
+            print(f"   ✅ 'Created By' column found with {created_by_count_1} non-null values")
+            sample_values_1 = df['Created By'].dropna().head(3).tolist()
+            print(f"   ✅ Sample values: {sample_values_1}")
+        else:
+            print(f"   ❌ 'Created By' column NOT found!")
+            print(f"   Available columns with 'Created': {[col for col in df.columns if 'created' in col.lower()]}")
         
         # Preserve Case Number as string
         if 'Case Number' in df.columns:
@@ -503,6 +551,15 @@ def process_case_files(file_data_list):
             'Case Owner Profile', 'Owner Dept'  # ✅ Added all text fields
         ]
         
+        # ✅ DEBUG STEP 2: Check Created By before text processing
+        print(f"\n🔍 STEP 2 - Before text column processing:")
+        if 'Created By' in df.columns:
+            created_by_count_2 = df['Created By'].notna().sum()
+            print(f"   ✅ 'Created By' has {created_by_count_2} non-null values")
+            print(f"   Data type: {df['Created By'].dtype}")
+        else:
+            print(f"   ❌ 'Created By' column missing before text processing!")
+        
         # Clean numerical columns (ensure they stay as numbers)
         for col in numerical_columns:
             if col in df.columns:
@@ -513,18 +570,51 @@ def process_case_files(file_data_list):
         # ✅ UPDATED: More careful text column preservation
         for col in text_columns:
             if col in df.columns:
-                # Keep as text, but be more careful with NaN handling
-                df[col] = df[col].astype(str)
-                # Only replace actual 'nan' strings, not valid data
-                df[col] = df[col].replace(['nan', 'NaT', 'None'], '')
-                # Convert empty strings to None, but preserve actual text values
-                df[col] = df[col].apply(lambda x: None if x == '' else x)
-                print(f"Preserved text column: {col}")
+                print(f"Processing text column: {col}")
                 
-                # ✅ DEBUG: Check Case Creator after text processing
-                if col == 'Case Creator':
-                    after_text_count = df['Case Creator'].notna().sum()
-                    print(f"🔍 Case Creator after text processing: {after_text_count} non-null values")
+                # ✅ Special handling for Created By
+                if col == 'Created By':
+                    print(f"   🎯 SPECIAL: Processing 'Created By' column")
+                    before_count = df[col].notna().sum()
+                    print(f"   Before processing: {before_count} non-null values")
+                    
+                    # Be extra careful with Created By
+                    original_values = df[col].copy()
+                    df[col] = df[col].astype(str)
+                    
+                    # Only replace actual pandas NaN strings, not real data
+                    df[col] = df[col].replace(['nan', 'NaT', 'None'], '')
+                    # Convert empty strings to None, but preserve actual text values
+                    df[col] = df[col].apply(lambda x: None if x == '' else x)
+                    
+                    after_count = df[col].notna().sum()
+                    print(f"   After processing: {after_count} non-null values")
+                    
+                    if after_count != before_count:
+                        print(f"   ❌ WARNING: Lost {before_count - after_count} values during text processing!")
+                        # Show what changed
+                        lost_indices = original_values.notna() & df[col].isna()
+                        if lost_indices.any():
+                            lost_values = original_values[lost_indices].head(5).tolist()
+                            print(f"   Lost values: {lost_values}")
+                else:
+                    # Normal text processing for other columns
+                    df[col] = df[col].astype(str)
+                    df[col] = df[col].replace(['nan', 'NaT', 'None'], '')
+                    df[col] = df[col].apply(lambda x: None if x == '' else x)
+                
+                print(f"Preserved text column: {col}")
+        
+        # ✅ DEBUG STEP 3: Check Created By after text processing
+        print(f"\n🔍 STEP 3 - After text column processing:")
+        if 'Created By' in df.columns:
+            created_by_count_3 = df['Created By'].notna().sum()
+            print(f"   ✅ 'Created By' has {created_by_count_3} non-null values")
+            if created_by_count_3 > 0:
+                sample_values_3 = df['Created By'].dropna().head(3).tolist()
+                print(f"   ✅ Sample values: {sample_values_3}")
+        else:
+            print(f"   ❌ 'Created By' column missing after text processing!")
         
         # Convert only actual date fields to datetime objects
         for col in actual_date_columns:
@@ -534,6 +624,14 @@ def process_case_files(file_data_list):
                 )
                 df[col] = pd.to_datetime(df[col], errors='coerce')
                 print(f"Converted date column: {col}")
+        
+        # ✅ DEBUG STEP 4: Check Created By after date processing
+        print(f"\n🔍 STEP 4 - After date processing:")
+        if 'Created By' in df.columns:
+            created_by_count_4 = df['Created By'].notna().sum()
+            print(f"   ✅ 'Created By' has {created_by_count_4} non-null values")
+        else:
+            print(f"   ❌ 'Created By' column missing after date processing!")
         
         # Create case_created_date as date-only version of Case: Created Date/Time
         if 'Case: Created Date/Time' in df.columns:
@@ -569,15 +667,18 @@ def process_case_files(file_data_list):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 print(f"Re-cleaned numerical column after date processing: {col}")
         
-        # ✅ REMOVED: The problematic re-preserve text columns logic that was overwriting data
-        # The text columns were already processed above, no need to re-process them
-        
-        # ✅ FINAL DEBUG: Check Case Creator before adding to combined data
-        if 'Case Creator' in df.columns:
-            final_creator_count = df['Case Creator'].notna().sum()
-            print(f"🔍 Final Case Creator non-null values: {final_creator_count}")
-            sample_values = df['Case Creator'].dropna().head(3).tolist()
-            print(f"🔍 Final Case Creator samples: {sample_values}")
+        # ✅ DEBUG STEP 5: Final check before adding to combined data
+        print(f"\n🔍 STEP 5 - Before adding to combined data:")
+        if 'Created By' in df.columns:
+            final_created_by_count = df['Created By'].notna().sum()
+            print(f"   ✅ 'Created By' has {final_created_by_count} non-null values")
+            if final_created_by_count > 0:
+                sample_values_final = df['Created By'].dropna().head(3).tolist()
+                print(f"   ✅ Sample values: {sample_values_final}")
+            else:
+                print(f"   ❌ WARNING: 'Created By' column exists but all values are null!")
+        else:
+            print(f"   ❌ 'Created By' column completely missing!")
         
         # ✅ VERIFY ROW COUNT HASN'T CHANGED
         processed_rows = len(df)
@@ -592,8 +693,26 @@ def process_case_files(file_data_list):
     if not all_case_data:
         return None
     
+    # ✅ DEBUG STEP 6: Check Created By before concatenation
+    print(f"\n🔍 STEP 6 - Before pd.concat:")
+    for i, df in enumerate(all_case_data):
+        if 'Created By' in df.columns:
+            count = df['Created By'].notna().sum()
+            print(f"   DataFrame {i}: 'Created By' has {count} non-null values")
+        else:
+            print(f"   DataFrame {i}: 'Created By' column missing!")
+    
     # Combine all case data
     combined_case = pd.concat(all_case_data, ignore_index=True, sort=False)
+    
+    # ✅ DEBUG STEP 7: Check Created By after concatenation
+    print(f"\n🔍 STEP 7 - After pd.concat:")
+    if 'Created By' in combined_case.columns:
+        concat_created_by_count = combined_case['Created By'].notna().sum()
+        print(f"   ✅ Combined 'Created By' has {concat_created_by_count} non-null values")
+    else:
+        print(f"   ❌ 'Created By' column missing after concat!")
+        print(f"   Available columns: {list(combined_case.columns)}")
     
     # ✅ CRITICAL ROW COUNT VERIFICATION
     final_rows = len(combined_case)
@@ -637,11 +756,23 @@ def process_case_files(file_data_list):
         'First Response Time Met', 'case_created_date'
     ]
     
+    # ✅ DEBUG STEP 8: Check Created By before column ordering
+    print(f"\n🔍 STEP 8 - Before column ordering:")
+    if 'Created By' in combined_case.columns:
+        pre_order_count = combined_case['Created By'].notna().sum()
+        print(f"   ✅ 'Created By' has {pre_order_count} non-null values before ordering")
+    else:
+        print(f"   ❌ 'Created By' column missing before ordering!")
+    
     # ✅ CAREFUL: Only add columns that are truly missing, don't overwrite existing data
     for col in cases_main_columns_order:
         if col not in combined_case.columns:
             combined_case[col] = None
             print(f"Added missing column: {col}")
+        elif col == 'Created By':
+            # Extra check for Created By
+            existing_count = combined_case[col].notna().sum()
+            print(f"'Created By' already exists with {existing_count} non-null values - NOT overwriting")
     
     # ✅ FINAL VERIFICATION: Check preserved data
     if 'Case Creator' in combined_case.columns:
@@ -660,8 +791,30 @@ def process_case_files(file_data_list):
         if created_by_count > 0:
             sample_created_by = combined_case['Created By'].dropna().head(3).tolist()
             print(f"✅ Sample Created By values: {sample_created_by}")
+        else:
+            print(f"❌ CRITICAL: Created By has NO values - this is the bug!")
+        
+        # ✅ FINAL ROW COUNT CHECK
+        if final_rows != total_source_rows:
+            print(f"\n❌ CRITICAL: Row count mismatch detected!")
+            print(f"   Source: {total_source_rows} rows")
+            print(f"   Master: {final_rows} rows")
+            print(f"   Stakeholder complaint about extra rows is VALID!")
+        else:
+            print(f"\n✅ Row count verification passed: {final_rows} rows")
     
+    # ✅ DEBUG STEP 9: Check Created By after column ordering
+    print(f"\n🔍 STEP 9 - After column ordering:")
     combined_case = combined_case[cases_main_columns_order]
+    
+    if 'Created By' in combined_case.columns:
+        final_created_by_count = combined_case['Created By'].notna().sum()
+        print(f"   ✅ Final 'Created By' has {final_created_by_count} non-null values")
+        if final_created_by_count == 0:
+            print(f"   ❌ FOUND THE BUG: Created By column exists but all values are null after ordering!")
+    else:
+        print(f"   ❌ 'Created By' column missing after final ordering!")
+    
     return combined_case
     
 def process_rating_files(chat_file_path, chat_sheet, case_file_path, case_sheet):
