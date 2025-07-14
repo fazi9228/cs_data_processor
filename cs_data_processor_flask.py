@@ -296,6 +296,7 @@ def smart_column_mapping(df, data_type):
 def process_chat_files(file_data_list):
     """Process chat files and return master_chat dataframe"""
     all_chat_data = []
+    total_source_rows = 0  # ✅ Track total source rows
     
     for file_info in file_data_list:
         df = file_info['data']
@@ -304,7 +305,11 @@ def process_chat_files(file_data_list):
         if detected_type not in ['live_chat', 'line_chat', 'wechat_chat']:
             continue
         
-        print(f"Processing {detected_type} file with {len(df)} rows")
+        # ✅ TRACK SOURCE ROWS
+        source_rows = len(df)
+        total_source_rows += source_rows
+        print(f"Processing {detected_type} file with {source_rows} rows")
+        print(f"📊 Source rows for this file: {source_rows}")
         
         # Apply column mappings
         mapping = smart_column_mapping(df, detected_type)
@@ -314,6 +319,14 @@ def process_chat_files(file_data_list):
             if old_col in transformed.columns:
                 transformed[new_col] = transformed[old_col]
                 print(f"Copied {old_col} -> {new_col}")
+                
+                # ✅ Check Owner Dept mapping specifically
+                if new_col == 'Owner Dept':
+                    dept_count = transformed[new_col].notna().sum()
+                    print(f"✅ Owner Dept column has {dept_count} non-null values")
+                    if dept_count > 0:
+                        sample_depts = transformed[new_col].dropna().head(3).tolist()
+                        print(f"✅ Sample Owner Dept values: {sample_depts}")
                 
                 # Check Agent specifically
                 if new_col == 'Agent':
@@ -357,6 +370,14 @@ def process_chat_files(file_data_list):
             if primary_date_col in transformed.columns:
                 transformed = create_date_columns(transformed, primary_date_col)
         
+        # ✅ VERIFY ROW COUNT HASN'T CHANGED
+        processed_rows = len(transformed)
+        if processed_rows != source_rows:
+            print(f"⚠️ WARNING: Row count changed! Source: {source_rows} → Processed: {processed_rows}")
+            print(f"   Difference: {processed_rows - source_rows} rows")
+        else:
+            print(f"✅ Row count preserved: {processed_rows} rows")
+        
         all_chat_data.append(transformed)
     
     if not all_chat_data:
@@ -364,6 +385,32 @@ def process_chat_files(file_data_list):
     
     # Combine all chat data
     master_chat = pd.concat(all_chat_data, ignore_index=True, sort=False)
+    
+    # ✅ CRITICAL ROW COUNT VERIFICATION
+    final_rows = len(master_chat)
+    print(f"\n🔢 CHAT ROW COUNT VERIFICATION:")
+    print(f"===============================")
+    print(f"Total source rows across all files: {total_source_rows}")
+    print(f"Final master_chat rows: {final_rows}")
+    
+    if final_rows == total_source_rows:
+        print(f"✅ SUCCESS: Row counts match exactly!")
+    else:
+        row_difference = final_rows - total_source_rows
+        if row_difference > 0:
+            print(f"❌ ERROR: {row_difference} EXTRA rows in master file!")
+            print(f"   This suggests data duplication or concatenation issues")
+        else:
+            print(f"❌ ERROR: {abs(row_difference)} MISSING rows from master file!")
+            print(f"   This suggests data loss during processing")
+        
+        # Additional debugging for row count mismatch
+        print(f"\n🔍 DEBUGGING ROW COUNT ISSUE:")
+        print(f"   Check for:")
+        print(f"   - Duplicate data in source files")
+        print(f"   - Empty rows being filtered out")
+        print(f"   - Date processing removing rows")
+        print(f"   - Concatenation issues")
     
     # Final check
     final_agent_count = master_chat['Agent'].notna().sum()
@@ -393,11 +440,22 @@ def process_chat_files(file_data_list):
             master_chat[col] = None
     
     master_chat = master_chat[master_chat_columns_order]
+    
+    # ✅ FINAL ROW COUNT CHECK
+    if final_rows != total_source_rows:
+        print(f"\n❌ CRITICAL: Chat row count mismatch detected!")
+        print(f"   Source: {total_source_rows} rows")
+        print(f"   Master: {final_rows} rows")
+        print(f"   Stakeholder complaint about extra rows is VALID!")
+    else:
+        print(f"\n✅ Chat row count verification passed: {final_rows} rows")
+    
     return master_chat
 
 def process_case_files(file_data_list):
     """Process multiple case files and return combined master_case dataframe"""
     all_case_data = []
+    total_source_rows = 0  # ✅ Track total source rows
     
     for file_info in file_data_list:
         df = file_info['data']
@@ -407,6 +465,11 @@ def process_case_files(file_data_list):
             continue
         
         print(f"Processing case file with {len(df)} rows")
+        
+        # ✅ TRACK SOURCE ROWS
+        source_rows = len(df)
+        total_source_rows += source_rows
+        print(f"📊 Source rows for this file: {source_rows}")
         
         # ✅ DEBUG: Check initial Case Creator values
         if 'Case Creator' in df.columns:
@@ -430,11 +493,14 @@ def process_case_files(file_data_list):
             'Age'
         ]
         
-        # ✅ UPDATED: Include both Created By and Case Creator in text columns
+        # ✅ UPDATED: Include ALL text/name columns that should be preserved
         text_columns = [
             'First Response Time Met', 'Working hours (Y/N)', 'First contact resolution',
             'Premium Client Qualified', 'Case Status', 'Case: Closed', 
-            'Created By', 'Case Creator'  # ✅ Added both creator fields
+            'Created By', 'Case Creator', 'Case Owner', 'Account Name', 
+            'Case Subject', 'Case Reason', 'Closed Reason', 'Source Email', 
+            'To Email', 'Case Record Type', 'Case Origin', 'Case Creator: Alias',
+            'Case Owner Profile', 'Owner Dept'  # ✅ Added all text fields
         ]
         
         # Clean numerical columns (ensure they stay as numbers)
@@ -513,6 +579,14 @@ def process_case_files(file_data_list):
             sample_values = df['Case Creator'].dropna().head(3).tolist()
             print(f"🔍 Final Case Creator samples: {sample_values}")
         
+        # ✅ VERIFY ROW COUNT HASN'T CHANGED
+        processed_rows = len(df)
+        if processed_rows != source_rows:
+            print(f"⚠️ WARNING: Row count changed! Source: {source_rows} → Processed: {processed_rows}")
+            print(f"   Difference: {processed_rows - source_rows} rows")
+        else:
+            print(f"✅ Row count preserved: {processed_rows} rows")
+        
         all_case_data.append(df)
     
     if not all_case_data:
@@ -520,6 +594,32 @@ def process_case_files(file_data_list):
     
     # Combine all case data
     combined_case = pd.concat(all_case_data, ignore_index=True, sort=False)
+    
+    # ✅ CRITICAL ROW COUNT VERIFICATION
+    final_rows = len(combined_case)
+    print(f"\n🔢 ROW COUNT VERIFICATION:")
+    print(f"===========================")
+    print(f"Total source rows across all files: {total_source_rows}")
+    print(f"Final master_case rows: {final_rows}")
+    
+    if final_rows == total_source_rows:
+        print(f"✅ SUCCESS: Row counts match exactly!")
+    else:
+        row_difference = final_rows - total_source_rows
+        if row_difference > 0:
+            print(f"❌ ERROR: {row_difference} EXTRA rows in master file!")
+            print(f"   This suggests data duplication or concatenation issues")
+        else:
+            print(f"❌ ERROR: {abs(row_difference)} MISSING rows from master file!")
+            print(f"   This suggests data loss during processing")
+        
+        # Additional debugging for row count mismatch
+        print(f"\n🔍 DEBUGGING ROW COUNT ISSUE:")
+        print(f"   Check for:")
+        print(f"   - Duplicate data in source files")
+        print(f"   - Empty rows being filtered out")
+        print(f"   - Date processing removing rows")
+        print(f"   - Concatenation issues")
     
     print(f"Final combined_case has {len(combined_case)} rows")
     
