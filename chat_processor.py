@@ -81,67 +81,93 @@ def detect_chat_data_type(df, filename=""):
 def smart_chat_column_mapping(df, data_type):
     """Intelligently map chat columns with multiple fallback patterns"""
     columns = df.columns.tolist()
+    columns_lower = {col: col.lower().strip() for col in columns}
     column_mapping = {}
     
     print(f"Processing {data_type} with columns: {columns}")
     
     mapping_patterns = {
         'Agent': [
-            'Owner: Full Name', 'owner: full name',
-            'WeChat Agent: Agent Nickname', 'wechat agent: agent nickname',
-            'Session Owner: Full Name', 'session owner: full name',  # Added for messaging
-            'Agent', 'agent', 'Owner Name', 'owner name', 'Agent Name', 'agent name'
+            'owner: full name',
+            'wechat agent: agent nickname',
+            'session owner: full name',
+            'agent',
+            'owner name',
+            'agent name'
         ],
         'Chat Key': [
-            'Chat Key', 'chat key', 'Number', 'number',
-            'Chat Transcript ID', 'chat transcript id', 
-            'Messaging Session Name', 'messaging session name',  # Added for messaging
-            'ID', 'id'
+            'chat key',
+            'number',
+            'chat transcript id',
+            'messaging session name',
+            'id'
         ],
         'Contact Name': [
-            'Contact Name: Full Name', 'contact name: full name',
-            'Follower Name', 'follower name', 
-            'Messaging User: Contact: Full Name', 'messaging user: contact: full name',  # Added for messaging
-            'Contact Name', 'contact name'
+            'contact name: full name',
+            'follower name',
+            'messaging user: contact: full name',
+            'contact name'
         ],
         'Start Time': [
-            'Start Time', 'start time', 'Request Time', 'request time',
-            'Created Date', 'created date', 'Chat Start Time', 'chat start time'
+            'actual start time',
+            'start time',
+            'request time',
+            'created date',
+            'chat start time'
+        ],
+        'End Time': [
+            'actual end time',
+            'end time'
         ],
         'Accept Time': [
-            'Accept Time', 'accept time'  # New for messaging
+            'accept date',
+            'accept time'
         ],
-        # ✅ NEW: Map Team to Owner Dept for LINE, WeChat, and Messaging
         'Owner Dept': [
-            'Owner Dept', 'owner dept',  # For Live Chat (SF)
-            'Team', 'team',              # For LINE, WeChat, and Messaging  
-            'Agent Dept', 'agent dept'   # Fallback option
+            'owner dept',
+            'team',
+            'agent dept',
+            'department'
+        ],
+        'Actual Chat Duration (min)': [
+            'actual chat duration (min)',
+            'actual duration (min)',
+            'duration (minutes)',
+            'aht'
+        ],
+        'Request Date': [
+            'request date',
+            'request time'
+        ],
+        'Close Date': [
+            'close date',
+            'closed date',
+            'end date'
         ]
     }
     
+    # Single pass matching - more efficient
     for target_col, patterns in mapping_patterns.items():
         for pattern in patterns:
-            if pattern in columns:
-                column_mapping[target_col] = pattern
-                print(f"Mapped {target_col} -> {pattern}")
-                break
-            for col in columns:
-                if col.lower() == pattern.lower():
-                    column_mapping[target_col] = col
-                    print(f"Mapped {target_col} -> {col}")
-                    break
-            if target_col in column_mapping:
+            # Find matching column (case-insensitive)
+            matched_col = next(
+                (col for col, col_lower in columns_lower.items() if pattern in col_lower),
+                None
+            )
+            if matched_col:
+                column_mapping[target_col] = matched_col
+                print(f"Mapped {target_col} -> {matched_col}")
                 break
     
-    # Set channel-specific values
-    if data_type == 'live_chat':
-        column_mapping['Channel'] = 'SF'
-    elif data_type == 'line_chat':
-        column_mapping['Channel'] = 'LINE'
-    elif data_type == 'wechat_chat':
-        column_mapping['Channel'] = 'WeChat'
-    elif data_type == 'messaging':
-        column_mapping['Channel'] = 'Messaging'
+    # Set channel based on data type
+    channel_map = {
+        'live_chat': 'SF',
+        'line_chat': 'LINE',
+        'wechat_chat': 'WeChat',
+        'messaging': 'Messaging'
+    }
+    if data_type in channel_map:
+        column_mapping['Channel'] = channel_map[data_type]
     
     print(f"Final mapping: {column_mapping}")
     return column_mapping
@@ -191,6 +217,18 @@ def process_chat_files(file_data_list):
         
         # Special handling for messaging data
         if detected_type == 'messaging':
+            # Preserve Actual Chat Duration (min) for messaging
+            if 'Actual Chat Duration (min)' in transformed.columns:
+                print("✅ Actual Chat Duration (min) preserved for Messaging")
+            
+            # Preserve Request Date for messaging
+            if 'Request Date' in transformed.columns:
+                print("✅ Request Date preserved for Messaging")
+            
+            # Preserve Close Date for messaging
+            if 'Close Date' in transformed.columns:
+                print("✅ Close Date preserved for Messaging")
+            
             # Convert Duration (Minutes) to Chat Duration (sec)
             if 'Duration (Minutes)' in transformed.columns:
                 transformed['Chat Duration (sec)'] = transformed['Duration (Minutes)'] * 60
@@ -199,6 +237,11 @@ def process_chat_files(file_data_list):
             # Leave Wait Time blank for messaging (as requested)
             transformed['Wait Time'] = None
             print("Set Wait Time to blank for messaging data")
+        else:
+            # For LINE, WeChat, and Live Chat (SF) - set Request Date and Close Date to blank
+            transformed['Request Date'] = None
+            transformed['Close Date'] = None
+            print(f"Set Request Date and Close Date to blank for {detected_type}")
         
         # Ensure required columns exist
         required_columns = [
@@ -210,30 +253,48 @@ def process_chat_files(file_data_list):
         for col in required_columns:
             if col not in transformed.columns:
                 transformed[col] = None
-        
+
         # Clean numerical columns (ensure they stay as numbers)
         numerical_columns = [
             'Wait Time', 'Chat Duration (sec)', 'Agent Average Response Time',
             'Agent Message Count', 'Visitor Message Count', 'Post-Chat Rating',
             'Agent First Response Time (Seconds)', 'Agent Avg Response Time',
-            'Duration (Minutes)', 'AHT (End - Accept) (min)'  # Added messaging duration fields
+            'Duration (Minutes)', 'Actual Chat Duration (min)'
         ]
-        
+
         for col in numerical_columns:
             if col in transformed.columns:
-                # Convert to numeric, replace non-numeric with blank/NaN
                 transformed[col] = pd.to_numeric(transformed[col], errors='coerce')
                 print(f"Cleaned numerical column: {col}")
-        
-        # Create date columns
-        date_columns = [col for col in transformed.columns if 'time' in col.lower() or 'date' in col.lower()]
+
+        # ✅ Handle date columns - ALL sources use DD/MM/YYYY format
+        date_columns_to_process = [col for col in transformed.columns 
+                                if 'time' in col.lower() or 'date' in col.lower()]
         # Exclude numerical time columns from date processing
-        date_columns = [col for col in date_columns if col not in numerical_columns]
-        
-        if date_columns:
-            primary_date_col = date_columns[0]
-            if primary_date_col in transformed.columns:
-                transformed = create_date_columns(transformed, primary_date_col)
+        date_columns_to_process = [col for col in date_columns_to_process 
+                                if col not in numerical_columns]
+
+        for date_col in date_columns_to_process:
+            if date_col in transformed.columns:
+                # Apply excel_to_datetime conversion first for Excel serial dates
+                transformed[date_col] = transformed[date_col].apply(
+                    lambda x: excel_to_datetime(x) if isinstance(x, (int, float)) and not pd.isna(x) else x
+                )
+                # Use dayfirst=True since ALL sources use DD/MM/YYYY format
+                transformed[date_col] = pd.to_datetime(transformed[date_col], dayfirst=True, errors='coerce')
+                print(f"Converted date column: {date_col} using DD/MM/YYYY format")
+
+        # Create date component columns from the primary date column
+        primary_date_col = None
+        if 'Start Time' in transformed.columns and transformed['Start Time'].notna().any():
+            primary_date_col = 'Start Time'
+        elif 'Actual Start Time' in transformed.columns and transformed['Actual Start Time'].notna().any():
+            primary_date_col = 'Actual Start Time'
+        elif 'Created Date' in transformed.columns and transformed['Created Date'].notna().any():
+            primary_date_col = 'Created Date'
+
+        if primary_date_col:
+            transformed = create_date_columns(transformed, primary_date_col)
         
         # ✅ VERIFY ROW COUNT HASN'T CHANGED
         processed_rows = len(transformed)
@@ -298,7 +359,7 @@ def process_chat_files(file_data_list):
         'Last Modified By: Full Name', 'Last Modified Date', 'Week ',
         'Agent Assigned Time', 'Created By: Full Name',
         'Agent First Response Time (Seconds)', 'Closed', 'Agent Avg Response Time',
-        'Accept Time'  # Added at the end
+        'Accept Time', 'Request Date', 'Close Date'  # Added at the end
     ]
     
     for col in master_chat_columns_order:
