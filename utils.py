@@ -34,7 +34,7 @@ def standardize_date_columns(df):
         'Start Time', 'End Time', 'Chat Start Time', 'Actual Start Time', 
         'Actual End Time', 'Last Modified Date', 'Agent Assigned Time',
         'Created Date', 'Case: Created Date/Time', 'First Response',
-        'Feedback Created Date', 'case_created_date', 'Accept Time'  # Added Accept Time
+        'Feedback Created Date', 'case_created_date', 'Accept Time'
     ]
     
     # Exclude numerical columns that contain time-related words but are actually numbers
@@ -43,7 +43,7 @@ def standardize_date_columns(df):
         'Agent Average Response Time', 'Wait Time', 'Chat Duration (sec)',
         'Days Since Last Response Time Stamp', 'Days Since Last Client Response',
         'Agent First Response Time (Seconds)', 'Agent Avg Response Time',
-        'Age', 'Duration (Minutes)', 'AHT (End - Accept) (min)'  # Added messaging duration fields
+        'Age', 'Duration (Minutes)', 'AHT (End - Accept) (min)'
     ]
     
     # Exclude text columns that might contain time-related words
@@ -102,15 +102,14 @@ def save_excel_with_proper_formatting(df, output_path):
                 'Case: Created Date/Time', 'Created Date', 'First Response',
                 'Start Time', 'End Time', 'Chat Start Time', 'Actual Start Time', 
                 'Actual End Time', 'Last Modified Date', 'Agent Assigned Time',
-                'Feedback Created Date', 'case_created_date', 'Accept Time'  # Added Accept Time
+                'Feedback Created Date', 'case_created_date', 'Accept Time','Request Date', 'Close Date'
             ]
             
             # Define numerical columns that should stay as numbers
             numerical_columns = [
                 'First Response Time (min)', 'First Response Time (hours)',
                 'Wait Time', 'Chat Duration (sec)', 'Agent Average Response Time',
-                'Age', 'Days Since Last Response Time Stamp', 'Days Since Last Client Response',
-                'Duration (Minutes)', 'AHT (End - Accept) (min)'  # Added messaging duration fields
+                'Age', 'Days Since Last Response Time Stamp', 'Days Since Last Client Response'
             ]
             
             # ✅ CRITICAL: Only apply date formatting to confirmed date columns
